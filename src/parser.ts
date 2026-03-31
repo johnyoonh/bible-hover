@@ -68,7 +68,7 @@ export class BibleParser {
         const parts = this.parseRef(refString);
         if (!parts) return null;
 
-        const { bookName, chapterNum, startVerse, endVerse } = parts;
+        const { bookName, chapterNum, verseSegments } = parts;
 
         // Resolve Alias (Case Insensitive)
         // Strip trailing dot if present (e.g., "Gen." -> "gen")
@@ -87,25 +87,37 @@ export class BibleParser {
         const chapter = book.chapters.get(chapterNum);
         if (!chapter) return null;
 
-        let output = "";
+        let outputSegments: string[] = [];
 
-        for (let i = startVerse; i <= endVerse; i++) {
-            const verseData = chapter.verses.get(i);
-            if (verseData) {
-                output += `<sup>${i}</sup> ${verseData.text} `;
+        for (const segment of verseSegments) {
+            let segmentText = "";
+            for (let i = segment.start; i <= segment.end; i++) {
+                const verseData = chapter.verses.get(i);
+                if (verseData) {
+                    segmentText += `<sup>${i}</sup> ${verseData.text} `;
+                }
+            }
+            if (segmentText) {
+                outputSegments.push(segmentText.trim());
             }
         }
 
-        return output.trim();
+        if (outputSegments.length === 0) return null;
+
+        // Join segments with a horizontal rule
+        return outputSegments.join('\n\n---\n\n');
     }
 
     public getVerseLine(refString: string): number | null {
         const parts = this.parseRef(refString);
         if (!parts) return null;
 
-        const { bookName, chapterNum, startVerse } = parts;
+        const { bookName, chapterNum, verseSegments } = parts;
+        if (verseSegments.length === 0 || !verseSegments[0]) return null;
+        
+        const firstVerse = verseSegments[0].start;
 
-        let searchKey = bookName.toLowerCase();
+        let searchKey = bookName.toLowerCase().replace(/\.$/, '');
         if (BOOK_ALIASES.has(searchKey)) {
             const properName = BOOK_ALIASES.get(searchKey)!;
             searchKey = properName.toLowerCase();
@@ -117,7 +129,7 @@ export class BibleParser {
         const chapter = book.chapters.get(chapterNum);
         if (!chapter) return null;
 
-        const verseData = chapter.verses.get(startVerse);
+        const verseData = chapter.verses.get(firstVerse);
         if (!verseData) return null;
 
         return verseData.line;
@@ -125,16 +137,28 @@ export class BibleParser {
 
     private parseRef(refString: string) {
         const cleanRef = refString.replace(/\[\[|\]\]/g, '').trim();
-        // Capture book (including optional dots), chapter, start verse, and optionally end verse
-        const parts = cleanRef.match(/(.+?)\s+(\d+):(\d+)(?:\s?[-–—]\s?(\d+))?/);
+        // Capture book, chapter, and the rest of the string containing verses
+        const mainMatch = cleanRef.match(/^(.+?)\s+(\d+):([\d\s,–—-]+)$/);
 
-        if (!parts || !parts[1] || !parts[2] || !parts[3]) return null;
+        if (!mainMatch || !mainMatch[1] || !mainMatch[2] || !mainMatch[3]) return null;
+
+        const bookName = mainMatch[1].trim();
+        const chapterNum = parseInt(mainMatch[2]);
+        const verseStr = mainMatch[3];
+
+        // Parse comma separated segments: "3-4,7-10" -> [{start:3, end:4}, {start:7, end:10}]
+        const segments = verseStr.split(',').map(s => {
+            const rangeMatch = s.trim().match(/(\d+)(?:\s?[-–—]\s?(\d+))?/);
+            if (!rangeMatch || !rangeMatch[1]) return null;
+            const start = parseInt(rangeMatch[1]);
+            const end = rangeMatch[2] ? parseInt(rangeMatch[2]) : start;
+            return { start, end };
+        }).filter((s): s is {start: number, end: number} => s !== null);
 
         return {
-            bookName: parts[1].trim(),
-            chapterNum: parseInt(parts[2]),
-            startVerse: parseInt(parts[3]),
-            endVerse: parts[4] ? parseInt(parts[4]) : parseInt(parts[3])
+            bookName,
+            chapterNum,
+            verseSegments: segments
         };
     }
 }

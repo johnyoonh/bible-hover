@@ -10,6 +10,7 @@ Hover over Bible references (e.g., `John 3:16`, `요 3:16`) to display the verse
 - **Smart Language Detection:** Automatically switches to the Korean Bible (KRV) for Korean references and uses the default Bible for English.
 - **Smart Positioning:** Hover popovers stay within the window boundaries and flip position if they would go off-screen.
 - **Verse Ranges:** Full support for ranges like `John 3:16-17` or `1 Peter 2:9-10` with various dash types.
+- **Comma-Separated Lists:** Support for non-consecutive verses like `John 3:3,16` or multiple ranges like `John 3:3-4,7-10`. A horizontal bar is automatically added between segments.
 - **Clean UI:** Minimalist hover interface focused purely on the scripture text with uniform padding.
 
 ![Demo](./demo.gif)

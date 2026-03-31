@@ -2,7 +2,7 @@ import { Plugin, MarkdownRenderer, TFile, Component } from 'obsidian';
 import { BibleParser } from './parser';
 import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab } from "./settings";
 import { bibleObserver } from './editor';
-import { isBibleRef, isValidBook } from './bookAliases';
+import { isBibleRef, isValidBook, isKorean } from './bookAliases';
 
 export default class BibleHoverPlugin extends Plugin {
     bibleParsers: Map<string, BibleParser> = new Map();
@@ -108,7 +108,7 @@ export default class BibleHoverPlugin extends Plugin {
                 if (textNode.parentElement?.closest('a') || textNode.parentElement?.closest('code')) continue;
 
                 const text = textNode.nodeValue || '';
-                const BIBLE_REF_REGEX = /((([1-3]\s|[IVX]+\s)?[A-Za-z\s]+?\.?)\s+\d+:\d+(?:\s?[-–—]\s?\d+)?)/gi;
+                const BIBLE_REF_REGEX = /((([1-3]\s|[IVX]+\s)?[\p{L}\s]+?\.?)\s+\d+:[\d\s,–—-]+)/gu;
                 let match;
                 const matches: RegExpExecArray[] = [];
 
@@ -202,7 +202,13 @@ export default class BibleHoverPlugin extends Plugin {
         document.body.style.setProperty('--bible-link-color', this.settings.linkColor);
     }
 
-    getCurrentParser(): BibleParser | null {
+    getCurrentParser(ref?: string): BibleParser | null {
+        if (ref) {
+            const parts = ref.match(/^(.+?)\s+/);
+            if (parts && parts[1] && isKorean(parts[1])) {
+                if (this.bibleParsers.has("KRV")) return this.bibleParsers.get("KRV")!;
+            }
+        }
         if (!this.currentVersion) return null;
         return this.bibleParsers.get(this.currentVersion) || null;
     }
@@ -226,7 +232,7 @@ export default class BibleHoverPlugin extends Plugin {
     }
 
     async onLinkHover(event: MouseEvent, ref: string, linkEl?: HTMLElement) {
-        const parser = this.getCurrentParser();
+        const parser = this.getCurrentParser(ref);
         if (!parser) return;
         const text = parser.getVerses(ref);
 
@@ -316,7 +322,7 @@ export default class BibleHoverPlugin extends Plugin {
     }
 
     private async navigateToVerse(evt: MouseEvent | TouchEvent, ref: string): Promise<void> {
-        const parser = this.getCurrentParser();
+        const parser = this.getCurrentParser(ref);
         if (!parser) return;
 
         evt.preventDefault();

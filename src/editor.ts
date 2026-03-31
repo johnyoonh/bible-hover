@@ -9,11 +9,12 @@ import { RangeSetBuilder } from "@codemirror/state";
 import { isValidBook } from "./bookAliases";
 
 // Match both [[Gen 1:1]] and Gen 1:1
-// Capture Group 1: Inner text if wrapped (e.g., Gen 1:1-2)
+// Supports Unicode (Korean), Roman Numerals, Arabic prefix numbers, ranges, and commas
+// Capture Group 1: Inner text if wrapped (e.g., Gen 1:1-2,5)
 // Capture Group 2: Book name if wrapped (e.g., Gen)
-// Capture Group 3: Full text if NOT wrapped (e.g., Gen 1:1-2)
+// Capture Group 3: Full text if NOT wrapped (e.g., Gen 1:1-2,5)
 // Capture Group 4: Book name if NOT wrapped (e.g., Gen)
-const BIBLE_REF_REGEX = /\[\[((.+?)\s+\d+:\d+(?:\s?[-–—]\s?\d+)?)\]\]|((([1-3]\s|[IVX]+\s)?[A-Za-z\s]+?\.?)\s+\d+:\d+(?:\s?[-–—]\s?\d+)?)/gi;
+const BIBLE_REF_REGEX = /\[\[((.+?)\s+\d+:[\d\s,–—-]+?)\]\]|((([1-3]\s|[IVX]+\s)?[\p{L}\s]+?\.?)\s+\d+:[\d\s,–—-]+)/gu;
 
 export const bibleObserver = ViewPlugin.fromClass(
     class {
