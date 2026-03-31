@@ -71,7 +71,8 @@ export class BibleParser {
         const { bookName, chapterNum, startVerse, endVerse } = parts;
 
         // Resolve Alias (Case Insensitive)
-        let searchKey = bookName.toLowerCase();
+        // Strip trailing dot if present (e.g., "Gen." -> "gen")
+        let searchKey = bookName.toLowerCase().replace(/\.$/, '');
 
         // Check alias map
         if (BOOK_ALIASES.has(searchKey)) {
@@ -86,7 +87,7 @@ export class BibleParser {
         const chapter = book.chapters.get(chapterNum);
         if (!chapter) return null;
 
-        let output = `**${book.name} ${chapterNum}:${startVerse}${startVerse !== endVerse ? '-' + endVerse : ''}**\n\n`;
+        let output = "";
 
         for (let i = startVerse; i <= endVerse; i++) {
             const verseData = chapter.verses.get(i);
@@ -123,12 +124,9 @@ export class BibleParser {
     }
 
     private parseRef(refString: string) {
-        const cleanRef = refString.replace(/\[\[|\]\]/g, '');
-        // Case insensitive regex matching not needed if we are just extracting
-        // but the input string itself might have different casing. 
-        // Logic remains same: extract parts, convert name to lower.
-
-        const parts = cleanRef.match(/(.+?)\s(\d+):(\d+)(?:-(\d+))?/);
+        const cleanRef = refString.replace(/\[\[|\]\]/g, '').trim();
+        // Capture book (including optional dots), chapter, start verse, and optionally end verse
+        const parts = cleanRef.match(/(.+?)\s+(\d+):(\d+)(?:\s?[-–—]\s?(\d+))?/);
 
         if (!parts || !parts[1] || !parts[2] || !parts[3]) return null;
 

@@ -2,7 +2,7 @@ import { Plugin, MarkdownRenderer, TFile, Component } from 'obsidian';
 import { BibleParser } from './parser';
 import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab } from "./settings";
 import { bibleObserver } from './editor';
-import { isBibleRef } from './bookAliases';
+import { isBibleRef, isValidBook } from './bookAliases';
 
 export default class BibleHoverPlugin extends Plugin {
     bibleParsers: Map<string, BibleParser> = new Map();
@@ -40,7 +40,7 @@ export default class BibleHoverPlugin extends Plugin {
             if (linkEl) {
                 const ref = this.getRefFromLink(linkEl);
                 if (ref) {
-                    void this.onLinkHover(evt, ref);
+                    void this.onLinkHover(evt, ref, linkEl);
                     return;
                 }
             }
@@ -54,7 +54,7 @@ export default class BibleHoverPlugin extends Plugin {
                 const ref = this.getRefFromLink(linkEl);
                 if (ref) {
                     const touch = evt.touches[0];
-                    void this.onLinkHover(touch as unknown as MouseEvent, ref);
+                    void this.onLinkHover(touch as unknown as MouseEvent, ref, linkEl);
                     return;
                 }
             }
@@ -97,6 +97,49 @@ export default class BibleHoverPlugin extends Plugin {
                     linkEl.addClass('bible-link');
                 }
             });
+
+            // Handle plain text references
+            const WALKER = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+            let node;
+            const nodesToReplace: { node: Text, matches: RegExpExecArray[] }[] = [];
+
+            while (node = WALKER.nextNode()) {
+                const textNode = node as Text;
+                if (textNode.parentElement?.closest('a') || textNode.parentElement?.closest('code')) continue;
+
+                const text = textNode.nodeValue || '';
+                const BIBLE_REF_REGEX = /((([1-3]\s|[IVX]+\s)?[A-Za-z\s]+?\.?)\s+\d+:\d+(?:\s?[-–—]\s?\d+)?)/gi;
+                let match;
+                const matches: RegExpExecArray[] = [];
+
+                while ((match = BIBLE_REF_REGEX.exec(text)) !== null) {
+                    const bookMatch = match[2];
+                    if (bookMatch && isValidBook(bookMatch)) {
+                        matches.push(match);
+                    }
+                }
+
+                if (matches.length > 0) {
+                    nodesToReplace.push({ node: textNode, matches });
+                }
+            }
+
+            for (const { node, matches } of nodesToReplace) {
+                const fragment = document.createDocumentFragment();
+                let lastIndex = 0;
+                const text = node.nodeValue || '';
+
+                for (const match of matches) {
+                    fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+                    const span = document.createElement('span');
+                    span.addClass('bible-link');
+                    span.setText(match[0]);
+                    fragment.appendChild(span);
+                    lastIndex = match.index + match[0].length;
+                }
+                fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+                node.replaceWith(fragment);
+            }
         });
     }
 
@@ -182,7 +225,7 @@ export default class BibleHoverPlugin extends Plugin {
         }
     }
 
-    async onLinkHover(event: MouseEvent, ref: string) {
+    async onLinkHover(event: MouseEvent, ref: string, linkEl?: HTMLElement) {
         const parser = this.getCurrentParser();
         if (!parser) return;
         const text = parser.getVerses(ref);
@@ -192,83 +235,17 @@ export default class BibleHoverPlugin extends Plugin {
         this.hoverPopover = document.createElement('div');
         this.hoverPopover.addClass('bible-hover-popover');
 
-        // Position closer to the link
-        let top = event.clientY + 5;
-        let left = event.clientX + 5;
-
-        if (left + 300 > window.innerWidth) left = window.innerWidth - 320;
-        if (top + 300 > window.innerHeight) top = event.clientY - 310;
-
-        this.hoverPopover.style.top = top + 'px';
-        this.hoverPopover.style.left = left + 'px';
-
         const renderContent = async (textToRender: string | null, contentDiv: HTMLElement) => {
             contentDiv.empty();
             const content = textToRender || 'Not found';
 
             let componentEl = this.LinkHoverComponent ?? new Component();
-			if (!componentEl) {
-				return;
-			}
-            
+            if (!componentEl) {
+                return;
+            }
+
             await MarkdownRenderer.render(this.app, content, contentDiv, '', componentEl);
         };
-
-        // Add version header if any bible loaded
-        if (this.bibleParsers.size > 0) {
-            const header = this.hoverPopover.createDiv({ cls: 'bible-popover-header' });
-
-            const leftSide = header.createDiv({ cls: 'bible-popover-left-side' });
-            leftSide.createSpan({ text: 'Version: ' });
-
-            if (this.bibleParsers.size > 1) {
-                const select = leftSide.createEl('select');
-                select.addClass('bible-popover-select');
-
-                Array.from(this.bibleParsers.keys()).forEach(version => {
-                    const option = select.createEl('option', { text: version, value: version });
-                    if (version === this.currentVersion) option.selected = true;
-                });
-
-                const setDefaultBtn = header.createEl('button', {
-                    text: 'Set default',
-                    cls: 'mod-cta'
-                });
-                setDefaultBtn.addClass('bible-popover-set-default-btn');
-                setDefaultBtn.setAttr('style', `display: ${this.currentVersion === this.settings.defaultBible ? 'none' : 'block'}`);
-
-                select.addEventListener('change', () => {
-                    void (async () => {
-                        this.currentVersion = select.value;
-                        const setDefaultBtnValue = header.querySelector('.bible-popover-set-default-btn') as HTMLElement;
-                        if (setDefaultBtnValue) {
-                            setDefaultBtnValue.setAttr('style', `display: ${this.currentVersion === this.settings.defaultBible ? 'none' : 'block'}`);
-                        }
-
-                        const newParser = this.getCurrentParser();
-                        if (newParser) {
-                            const newText = newParser.getVerses(ref);
-                            await renderContent(newText, contentDiv);
-                        }
-                    })();
-                });
-
-                setDefaultBtn.addEventListener('click', () => {
-                    void (async () => {
-                        this.settings.defaultBible = this.currentVersion;
-                        await this.saveSettings();
-                        setDefaultBtn.setText('Saved!');
-                        setTimeout(() => {
-                            setDefaultBtn.setText('Set default');
-                            setDefaultBtn.setAttr('style', 'display: none');
-                        }, 1000);
-                    })();
-                });
-            } else {
-                // Just show version name as text if only one
-                leftSide.createSpan({ text: this.currentVersion, cls: 'bible-version-tag' });
-            }
-        }
 
         const contentDiv = this.hoverPopover.createDiv({ cls: 'bible-popover-content' });
         await renderContent(text, contentDiv);
@@ -294,6 +271,32 @@ export default class BibleHoverPlugin extends Plugin {
         });
 
         document.body.appendChild(this.hoverPopover);
+
+        // Calculate position after adding to body
+        const rect = this.hoverPopover.getBoundingClientRect();
+        const hoverWidth = rect.width || 400;
+        const hoverHeight = rect.height || 500;
+
+        let top = event.clientY + 15;
+        let left = event.clientX + 15;
+
+        // Ensure it doesn't go beyond right edge
+        if (left + hoverWidth > window.innerWidth) {
+            left = window.innerWidth - hoverWidth - 20;
+        }
+
+        // Ensure it doesn't go beyond bottom edge
+        if (top + hoverHeight > window.innerHeight) {
+            // Flip to show above the mouse
+            top = event.clientY - hoverHeight - 15;
+        }
+
+        // Ensure it doesn't go beyond top or left edges
+        if (left < 10) left = 10;
+        if (top < 10) top = 10;
+
+        this.hoverPopover.style.top = top + 'px';
+        this.hoverPopover.style.left = left + 'px';
     }
 
     onLinkLeave(event: MouseEvent) {
