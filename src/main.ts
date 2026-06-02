@@ -239,6 +239,9 @@ export default class BibleHoverPlugin extends Plugin {
         this.settings.verseDisplayMode = mode;
         await this.saveSettings();
         this.refreshInlineVerseDisplay();
+        if (this.isInlineVerseDisplayEnabled()) {
+            this.removeHoverPopover();
+        }
 
         const modeLabel = mode === 'off'
             ? 'hiding inline verses'
@@ -255,6 +258,10 @@ export default class BibleHoverPlugin extends Plugin {
 
     refreshInlineVerseDisplay(): void {
         this.app.workspace.updateOptions();
+    }
+
+    private isInlineVerseDisplayEnabled(): boolean {
+        return this.settings.verseDisplayMode !== 'off';
     }
 
     async loadBibleData() {
@@ -345,11 +352,16 @@ export default class BibleHoverPlugin extends Plugin {
     }
 
     async onLinkHover(event: MouseEvent, ref: string, linkEl?: HTMLElement) {
+        if (this.isInlineVerseDisplayEnabled()) {
+            this.removeHoverPopover();
+            return;
+        }
+
         const parser = this.getCurrentParser(ref);
         if (!parser) return;
         const text = parser.getVerses(ref);
 
-        if (this.hoverPopover) this.hoverPopover.remove();
+        this.removeHoverPopover();
 
         this.hoverPopover = document.createElement('div');
         this.hoverPopover.addClass('bible-hover-popover');
@@ -416,6 +428,13 @@ export default class BibleHoverPlugin extends Plugin {
 
         this.hoverPopover.style.top = top + 'px';
         this.hoverPopover.style.left = left + 'px';
+    }
+
+    private removeHoverPopover(): void {
+        if (this.hoverPopover) {
+            this.hoverPopover.remove();
+            this.hoverPopover = null;
+        }
     }
 
     private createInlineVerseElement(ref: string): HTMLElement | null {
