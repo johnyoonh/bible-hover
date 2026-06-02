@@ -12,15 +12,18 @@ export interface BibleHoverSettings {
 	defaultBible: string; // Name of the default version
 	linkColor: string;
 	verseDisplayMode: VerseDisplayMode;
+	verseOpenTarget: VerseOpenTarget;
 }
 
 export type VerseDisplayMode = 'off' | 'single' | 'full';
+export type VerseOpenTarget = 'right-sidebar' | 'right-split';
 
 export const DEFAULT_SETTINGS: BibleHoverSettings = {
 	bibles: [],
 	defaultBible: '',
 	linkColor: '#ff4d4d',
-	verseDisplayMode: 'off'
+	verseDisplayMode: 'off',
+	verseOpenTarget: 'right-sidebar'
 }
 
 export class BibleHoverSettingTab extends PluginSettingTab {
@@ -113,6 +116,19 @@ export class BibleHoverSettingTab extends PluginSettingTab {
 					this.plugin.settings.verseDisplayMode = value as VerseDisplayMode;
 					await this.plugin.saveSettings();
 					this.plugin.refreshInlineVerseDisplay();
+				}));
+
+		new Setting(containerEl)
+			.setName('Verse open target')
+			.setDesc('Choose where clicked Bible references open.')
+			.addDropdown(dropdown => dropdown
+				.addOption('right-sidebar', 'Right sidebar')
+				.addOption('right-split', 'Right split pane')
+				.setValue(this.plugin.settings.verseOpenTarget)
+				.onChange(async (value) => {
+					this.plugin.settings.verseOpenTarget = value as VerseOpenTarget;
+					await this.plugin.saveSettings();
+					this.plugin.clearVerseLeaf();
 				}));
 
 		// List of configured versions

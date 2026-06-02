@@ -1,6 +1,6 @@
 import { Plugin, MarkdownRenderer, TFile, Component, Notice, MarkdownView, WorkspaceLeaf } from 'obsidian';
 import { BibleParser } from './parser';
-import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, VerseDisplayMode } from "./settings";
+import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, VerseDisplayMode, VerseOpenTarget } from "./settings";
 import { createBibleObserver } from './editor';
 import { isBibleRef, isKorean } from './bookAliases';
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX } from './references';
@@ -13,6 +13,7 @@ export default class BibleHoverPlugin extends Plugin {
     settings: BibleHoverSettings;
     LinkHoverComponent: Component | null
     verseLeaf: WorkspaceLeaf | null = null;
+    verseLeafTarget: VerseOpenTarget | null = null;
 
     async onload() {
 
@@ -497,17 +498,28 @@ export default class BibleHoverPlugin extends Plugin {
                 eState: { line: line },
                 active: true
             });
+            if (this.settings.verseOpenTarget === 'right-sidebar') {
+                await this.app.workspace.revealLeaf(leaf);
+            }
             await this.setVerseLeafReadOnly(leaf, line);
         }
     }
 
     private getVerseLeaf(): WorkspaceLeaf {
-        if (this.verseLeaf?.view.containerEl.isConnected) {
+        if (this.verseLeaf?.view.containerEl.isConnected && this.verseLeafTarget === this.settings.verseOpenTarget) {
             return this.verseLeaf;
         }
 
-        this.verseLeaf = this.app.workspace.getLeaf('split', 'vertical');
+        this.verseLeaf = this.settings.verseOpenTarget === 'right-sidebar'
+            ? this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf('split', 'vertical')
+            : this.app.workspace.getLeaf('split', 'vertical');
+        this.verseLeafTarget = this.settings.verseOpenTarget;
         return this.verseLeaf;
+    }
+
+    clearVerseLeaf(): void {
+        this.verseLeaf = null;
+        this.verseLeafTarget = null;
     }
 
     private async setVerseLeafReadOnly(leaf: WorkspaceLeaf, line: number): Promise<void> {
