@@ -153,7 +153,7 @@ export function isKorean(text: string): boolean {
 export function isBibleRef(text: string): boolean {
         // Match pattern: "Book Name chapter:verse"
         // Support complex verse parts like "3:3,16", "3:3-4,7-10", and "Exodus 5:22-6:1".
-        const match = text.match(/^(.+?)[ \t]+(\d+):(\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?(?:[ \t]*,[ \t]*\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?)*)$/);
+        const match = text.match(/^(.+?)[ \t]+(\d+):(\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?(?:[ \t]*,[ \t]*(?![1-3][ \t]+[\p{L}]+(?:[ \t]+[\p{L}]+)*[ \t]+\d+:)\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?)*)$/u);
         if (!match || !match[1]) return false;
 
         return isValidBook(match[1])

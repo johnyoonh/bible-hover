@@ -1,7 +1,9 @@
 import { isBibleRef, isValidBook, validBookNames } from "./bookAliases";
 
 const SPACE = "[ \\t]";
-const VERSE_PART = `\\d+(?::\\d+)?(?:${SPACE}*[-–—]${SPACE}*(?:\\d+:)?\\d+)?(?:${SPACE}*,${SPACE}*\\d+(?::\\d+)?(?:${SPACE}*[-–—]${SPACE}*(?:\\d+:)?\\d+)?)*`;
+const VERSE_SEGMENT = `\\d+(?::\\d+)?(?:${SPACE}*[-–—]${SPACE}*(?:\\d+:)?\\d+)?`;
+const NUMBERED_BOOK_REF_AFTER_COMMA = `[1-3]${SPACE}+[\\p{L}]+(?:${SPACE}+[\\p{L}]+)*${SPACE}+\\d+:`;
+const VERSE_PART = `${VERSE_SEGMENT}(?:${SPACE}*,${SPACE}*(?!${NUMBERED_BOOK_REF_AFTER_COMMA})${VERSE_SEGMENT})*`;
 const BOOK_BOUNDARY = "(?<![\\p{L}\\d])";
 
 function escapeRegex(value: string): string {

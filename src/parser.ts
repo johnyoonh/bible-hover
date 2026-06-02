@@ -177,7 +177,7 @@ export class BibleParser {
             .replace(/[ \t]*[-–—][ \t]*$/g, '')
             .trim();
         // Capture book, chapter, and the rest of the string containing verses
-        const mainMatch = cleanRef.match(/^(.+?)[ \t]+(\d+):(\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?(?:[ \t]*,[ \t]*\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?)*)$/);
+        const mainMatch = cleanRef.match(/^(.+?)[ \t]+(\d+):(\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?(?:[ \t]*,[ \t]*(?![1-3][ \t]+[\p{L}]+(?:[ \t]+[\p{L}]+)*[ \t]+\d+:)\d+(?::\d+)?(?:[ \t]*[-–—][ \t]*(?:\d+:)?\d+)?)*)$/u);
 
         if (!mainMatch || !mainMatch[1] || !mainMatch[2] || !mainMatch[3]) return null;
 
