@@ -2,7 +2,8 @@ import { Plugin, MarkdownRenderer, TFile, Component } from 'obsidian';
 import { BibleParser } from './parser';
 import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab } from "./settings";
 import { bibleObserver } from './editor';
-import { isBibleRef, isValidBook, isKorean } from './bookAliases';
+import { isBibleRef, isKorean } from './bookAliases';
+import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX } from './references';
 
 export default class BibleHoverPlugin extends Plugin {
     bibleParsers: Map<string, BibleParser> = new Map();
@@ -67,20 +68,11 @@ export default class BibleHoverPlugin extends Plugin {
             if (linkEl) {
                 const ref = this.getRefFromLink(linkEl);
                 if (ref) {
-                    await this.navigateToVerse(evt, ref);
-                    return;
-                }
-            }
-            this.handleLinkNotFound(evt);
-        }, { capture: true });
-
-        // Touch support for navigation (tap on link)
-        this.registerDomEvent(document, 'touchend', async (evt: TouchEvent) => {
-            const linkEl = this.getLinkElement(evt.target as HTMLElement);
-            if (linkEl) {
-                const ref = this.getRefFromLink(linkEl);
-                if (ref) {
-                    await this.navigateToVerse(evt, ref);
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    if (evt.metaKey) {
+                        await this.navigateToVerse(evt, ref);
+                    }
                     return;
                 }
             }
@@ -91,35 +83,62 @@ export default class BibleHoverPlugin extends Plugin {
             const links = element.querySelectorAll('a.internal-link');
             links.forEach((link) => {
                 const linkEl = link as HTMLAnchorElement;
-                const href = linkEl.getAttribute('data-href');
+                const href = normalizeReference(linkEl.getAttribute('data-href') ?? "");
 
                 if (href && isBibleRef(href)) {
                     linkEl.addClass('bible-link');
+                    linkEl.setAttribute('data-href', href);
                 }
             });
 
-            // Handle plain text references
+            // Handle plain text references and standalone chapter:verse
             const WALKER = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-            let node;
-            const nodesToReplace: { node: Text, matches: RegExpExecArray[] }[] = [];
+            const nodesToReplace: { node: Text, matches: { full: string, book?: string, text: string, index: number }[] }[] = [];
+            let lastBook: string | undefined;
 
-            while (node = WALKER.nextNode()) {
+            while (true) {
+                const node = WALKER.nextNode();
+                if (!node) break;
+
                 const textNode = node as Text;
                 if (textNode.parentElement?.closest('a') || textNode.parentElement?.closest('code')) continue;
 
                 const text = textNode.nodeValue || '';
-                const BIBLE_REF_REGEX = /((([1-3]\s|[IVX]+\s)?[\p{L}\s]+?\.?)\s+\d+:[\d\s,–—-]+)/gu;
-                let match;
-                const matches: RegExpExecArray[] = [];
+                const matches: { full: string, book?: string, text: string, index: number }[] = [];
 
-                while ((match = BIBLE_REF_REGEX.exec(text)) !== null) {
-                    const bookMatch = match[2];
-                    if (bookMatch && isValidBook(bookMatch)) {
-                        matches.push(match);
+                // Track matches with their indices
+                let fullMatch;
+                FULL_REF_REGEX.lastIndex = 0;
+                while ((fullMatch = FULL_REF_REGEX.exec(text)) !== null) {
+                    const fullRef = normalizeReference(fullMatch[1] ?? "");
+                    const bookMatch = bookNameFromReference(fullRef);
+                    if (bookMatch && isBibleRef(fullRef)) {
+                        lastBook = bookMatch;
+                        matches.push({ full: fullRef, book: bookMatch, text: fullRef, index: fullMatch.index });
+                    }
+                }
+
+                if (lastBook) {
+                    let standaloneMatch;
+                    STANDALONE_REF_REGEX.lastIndex = 0;
+                    while ((standaloneMatch = STANDALONE_REF_REGEX.exec(text)) !== null) {
+                        const standaloneRef = standaloneMatch[1];
+                        if (!standaloneRef) continue;
+                        const standaloneIndex = standaloneMatch.index;
+                        // Avoid overlapping with full matches
+                        if (!matches.some(m => standaloneIndex >= m.index && standaloneIndex < m.index + m.full.length)) {
+                            matches.push({ 
+                                full: `${lastBook} ${standaloneRef}`, 
+                                text: standaloneRef, 
+                                index: standaloneIndex 
+                            });
+                        }
                     }
                 }
 
                 if (matches.length > 0) {
+                    // Sort matches by index
+                    matches.sort((a, b) => a.index - b.index);
                     nodesToReplace.push({ node: textNode, matches });
                 }
             }
@@ -133,9 +152,10 @@ export default class BibleHoverPlugin extends Plugin {
                     fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
                     const span = document.createElement('span');
                     span.addClass('bible-link');
-                    span.setText(match[0]);
+                    span.setAttribute('data-href', match.full); // Store the full reference including inferred book
+                    span.setText(match.text);
                     fragment.appendChild(span);
-                    lastIndex = match.index + match[0].length;
+                    lastIndex = match.index + match.text.length;
                 }
                 fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
                 node.replaceWith(fragment);
@@ -214,15 +234,29 @@ export default class BibleHoverPlugin extends Plugin {
     }
 
     private getLinkElement(target: HTMLElement): HTMLElement | null {
-        return target.matches('.bible-link') ? target : target.closest('.bible-link');
+        const directLink = target.matches('.bible-link') ? target : target.closest('.bible-link');
+        if (directLink) return directLink as HTMLElement;
+
+        const line = target.closest<HTMLElement>('.cm-line');
+        if (line && firstValidReference(line.textContent ?? "")) {
+            return line;
+        }
+
+        return null;
     }
 
     private getRefFromLink(linkEl: HTMLElement): string | null {
-        let ref = linkEl.getAttribute('data-href') ||  linkEl.textContent;
+        let ref = normalizeReference(linkEl.getAttribute('data-href') ||  linkEl.textContent || "");
         if (!ref) return null;
 
-        ref = ref.replace(/\[\[|\]\]/g, '');
-        return isBibleRef(ref) ? ref : null;
+        if (isBibleRef(ref)) return ref;
+
+        const line = linkEl.closest<HTMLElement>('.cm-line');
+        if (line) {
+            return firstValidReference(line.textContent ?? "");
+        }
+
+        return firstValidReference(ref);
     }
 
     private handleLinkNotFound(event: MouseEvent | TouchEvent): void {
@@ -321,7 +355,7 @@ export default class BibleHoverPlugin extends Plugin {
         }, 300) as unknown as number;
     }
 
-    private async navigateToVerse(evt: MouseEvent | TouchEvent, ref: string): Promise<void> {
+    private async navigateToVerse(evt: MouseEvent, ref: string): Promise<void> {
         const parser = this.getCurrentParser(ref);
         if (!parser) return;
 
@@ -339,10 +373,7 @@ export default class BibleHoverPlugin extends Plugin {
         const file = this.app.vault.getAbstractFileByPath(path);
 
         if (file instanceof TFile) {
-            // Check for modifiers (Ctrl/Cmd) on mouse events
-            const isMouseEvent = evt instanceof MouseEvent;
-            const newLeaf = isMouseEvent && (evt.ctrlKey || evt.metaKey);
-            const leaf = this.app.workspace.getLeaf(newLeaf);
+            const leaf = this.app.workspace.getLeaf(true);
             await leaf.openFile(file, { eState: { line: line } });
         }
     }

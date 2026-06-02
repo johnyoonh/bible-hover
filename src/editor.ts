@@ -6,15 +6,8 @@ import {
     ViewUpdate,
 } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
-import { isValidBook } from "./bookAliases";
-
-// Match both [[Gen 1:1]] and Gen 1:1
-// Supports Unicode (Korean), Roman Numerals, Arabic prefix numbers, ranges, and commas
-// Capture Group 1: Inner text if wrapped (e.g., Gen 1:1-2,5)
-// Capture Group 2: Book name if wrapped (e.g., Gen)
-// Capture Group 3: Full text if NOT wrapped (e.g., Gen 1:1-2,5)
-// Capture Group 4: Book name if NOT wrapped (e.g., Gen)
-const BIBLE_REF_REGEX = /\[\[((.+?)\s+\d+:[\d\s,–—-]+?)\]\]|((([1-3]\s|[IVX]+\s)?[\p{L}\s]+?\.?)\s+\d+:[\d\s,–—-]+)/gu;
+import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX, WRAPPED_REF_REGEX } from "./references";
+import { isBibleRef } from "./bookAliases";
 
 export const bibleObserver = ViewPlugin.fromClass(
     class {
@@ -32,32 +25,60 @@ export const bibleObserver = ViewPlugin.fromClass(
 
         buildDecorations(view: EditorView): DecorationSet {
             const builder = new RangeSetBuilder<Decoration>();
+            const fullText = view.state.doc.toString();
 
             for (const { from, to } of view.visibleRanges) {
-                const text = view.state.doc.sliceString(from, to);
+                const visibleText = view.state.doc.sliceString(from, to);
+                
                 let match;
+                const matches: { start: number, end: number, full: string }[] = [];
 
-                // Reset regex
-                BIBLE_REF_REGEX.lastIndex = 0;
+                WRAPPED_REF_REGEX.lastIndex = 0;
+                while ((match = WRAPPED_REF_REGEX.exec(visibleText)) !== null) {
+                    const isWrapped = match[0].startsWith("[[");
+                    const rawText = isWrapped ? match[0].slice(2, -2) : match[0];
+                    const innerText = normalizeReference(rawText);
 
-                while ((match = BIBLE_REF_REGEX.exec(text)) !== null) {
-                    const isWrapped = !!match[1];
-                    const innerText = isWrapped ? match[1] : match[3];
-                    const bookName = isWrapped ? match[2] : match[4];
-
-                    if (bookName && isValidBook(bookName) && innerText) {
+                    if (innerText && isBibleRef(innerText)) {
                         const start = from + match.index + (isWrapped ? 2 : 0);
                         const end = start + innerText.length;
-
-                        // Add mark decoration
-                        builder.add(
-                            start,
-                            end,
-                            Decoration.mark({
-                                class: "bible-link"
-                            })
-                        );
+                        matches.push({ start, end, full: innerText });
                     }
+                }
+
+                // Standalone references
+                STANDALONE_REF_REGEX.lastIndex = 0;
+                while ((match = STANDALONE_REF_REGEX.exec(visibleText)) !== null) {
+                    const start = from + match.index;
+                    const standaloneRef = match[1];
+                    if (!standaloneRef) continue;
+                    const end = start + standaloneRef.length;
+
+                    // Avoid overlapping
+                    if (matches.some(m => start >= m.start && start < m.end)) continue;
+
+                    // Infer book by scanning backwards in the full document
+                    const textBefore = fullText.slice(0, start);
+                    const bookMatch = Array.from(textBefore.matchAll(FULL_REF_REGEX)).pop();
+                    const previousRef = bookMatch ? firstValidReference(bookMatch[0]) : null;
+                    const bookName = previousRef ? bookNameFromReference(previousRef) : null;
+                    
+                    if (bookName) {
+                        matches.push({ start, end, full: `${bookName} ${standaloneRef}` });
+                    }
+                }
+
+                // Add decorations
+                matches.sort((a, b) => a.start - b.start);
+                for (const m of matches) {
+                    builder.add(
+                        m.start,
+                        m.end,
+                        Decoration.mark({
+                            class: "bible-link",
+                            attributes: { "data-href": m.full }
+                        })
+                    );
                 }
             }
 
