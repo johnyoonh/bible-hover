@@ -143,7 +143,7 @@ export const validBookNames: Set<string> = new Set(
 );
 
 export function isValidBook(bookName: string): boolean {
-    return validBookNames.has(bookName.toLowerCase().trim());
+    return validBookNames.has(bookName.toLowerCase().trim().replace(/\.$/, ""));
 }
 
 export function isKorean(text: string): boolean {

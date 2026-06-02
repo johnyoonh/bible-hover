@@ -1,17 +1,34 @@
-import { isBibleRef, isValidBook } from "./bookAliases";
+import { isBibleRef, isValidBook, validBookNames } from "./bookAliases";
 
 const SPACE = "[ \\t]";
-const BOOK = `(?:[1-3]${SPACE}+|[IVX]+${SPACE}+)?[\\p{L}]+(?:${SPACE}+[\\p{L}]+)*\\.?`;
 const VERSE_PART = `\\d+(?::\\d+)?(?:${SPACE}*[-–—]${SPACE}*(?:\\d+:)?\\d+)?(?:${SPACE}*,${SPACE}*\\d+(?::\\d+)?(?:${SPACE}*[-–—]${SPACE}*(?:\\d+:)?\\d+)?)*`;
+const BOOK_BOUNDARY = "(?<![\\p{L}\\d])";
+
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function aliasToRegex(alias: string): string {
+    return alias
+        .trim()
+        .split(/[ \t]+/)
+        .map(escapeRegex)
+        .join(`${SPACE}+`) + "\\.?";
+}
+
+const BOOK = Array.from(validBookNames)
+    .sort((a, b) => b.length - a.length)
+    .map(aliasToRegex)
+    .join("|");
 
 export const FULL_REF_REGEX = new RegExp(
-    `(((${BOOK})${SPACE}+\\d+:${VERSE_PART}))`,
-    "gu",
+    `${BOOK_BOUNDARY}(((${BOOK})${SPACE}+\\d+:${VERSE_PART}))`,
+    "giu",
 );
 
 export const WRAPPED_REF_REGEX = new RegExp(
-    `\\[\\[(((${BOOK})${SPACE}+\\d+:${VERSE_PART}))\\]\\]|(((${BOOK})${SPACE}+\\d+:${VERSE_PART}))`,
-    "gu",
+    `\\[\\[(((${BOOK})${SPACE}+\\d+:${VERSE_PART}))\\]\\]|${BOOK_BOUNDARY}(((${BOOK})${SPACE}+\\d+:${VERSE_PART}))`,
+    "giu",
 );
 
 export const STANDALONE_REF_REGEX = new RegExp(

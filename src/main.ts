@@ -130,7 +130,7 @@ export default class BibleHoverPlugin extends Plugin {
 
             // Handle plain text references and standalone chapter:verse
             const WALKER = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-            const nodesToReplace: { node: Text, matches: { full: string, book?: string, text: string, index: number }[] }[] = [];
+            const nodesToReplace: { node: Text, matches: { full: string, book?: string, text: string, index: number, inlineEndIndex: number }[] }[] = [];
             let lastBook: string | undefined;
 
             while (true) {
@@ -141,7 +141,7 @@ export default class BibleHoverPlugin extends Plugin {
                 if (textNode.parentElement?.closest('a') || textNode.parentElement?.closest('code')) continue;
 
                 const text = textNode.nodeValue || '';
-                const matches: { full: string, book?: string, text: string, index: number }[] = [];
+                const matches: { full: string, book?: string, text: string, index: number, inlineEndIndex: number }[] = [];
 
                 // Track matches with their indices
                 let fullMatch;
@@ -151,7 +151,13 @@ export default class BibleHoverPlugin extends Plugin {
                     const bookMatch = bookNameFromReference(fullRef);
                     if (bookMatch && isBibleRef(fullRef)) {
                         lastBook = bookMatch;
-                        matches.push({ full: fullRef, book: bookMatch, text: fullRef, index: fullMatch.index });
+                        matches.push({
+                            full: fullRef,
+                            book: bookMatch,
+                            text: fullRef,
+                            index: fullMatch.index,
+                            inlineEndIndex: this.getInlineTextEndIndex(text, fullMatch.index + fullRef.length)
+                        });
                     }
                 }
 
@@ -167,7 +173,8 @@ export default class BibleHoverPlugin extends Plugin {
                             matches.push({ 
                                 full: `${lastBook} ${standaloneRef}`, 
                                 text: standaloneRef, 
-                                index: standaloneIndex 
+                                index: standaloneIndex,
+                                inlineEndIndex: this.getInlineTextEndIndex(text, standaloneIndex + standaloneRef.length)
                             });
                         }
                     }
@@ -193,10 +200,14 @@ export default class BibleHoverPlugin extends Plugin {
                     span.setText(match.text);
                     fragment.appendChild(span);
                     const inlineVerseEl = this.createInlineVerseElement(match.full);
+                    const matchEndIndex = match.index + match.text.length;
                     if (inlineVerseEl) {
+                        fragment.appendChild(document.createTextNode(text.substring(matchEndIndex, match.inlineEndIndex)));
                         fragment.appendChild(inlineVerseEl);
+                        lastIndex = match.inlineEndIndex;
+                    } else {
+                        lastIndex = matchEndIndex;
                     }
-                    lastIndex = match.index + match.text.length;
                 }
                 fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
                 node.replaceWith(fragment);
@@ -408,6 +419,10 @@ export default class BibleHoverPlugin extends Plugin {
         inlineVerseEl.addClass('bible-inline-verse');
         inlineVerseEl.innerHTML = text;
         return inlineVerseEl;
+    }
+
+    private getInlineTextEndIndex(text: string, endIndex: number): number {
+        return text[endIndex] === ':' ? endIndex + 1 : endIndex;
     }
 
     onLinkLeave(event: MouseEvent) {

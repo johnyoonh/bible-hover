@@ -11,6 +11,13 @@ import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeRe
 import { isBibleRef } from "./bookAliases";
 import type BibleHoverPlugin from "./main";
 
+interface BibleReferenceMatch {
+    start: number;
+    end: number;
+    insertAt: number;
+    full: string;
+}
+
 class InlineVerseWidget extends WidgetType {
     constructor(private text: string) {
         super();
@@ -50,7 +57,7 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
                 const visibleText = view.state.doc.sliceString(from, to);
                 
                 let match;
-                const matches: { start: number, end: number, full: string }[] = [];
+                const matches: BibleReferenceMatch[] = [];
 
                 WRAPPED_REF_REGEX.lastIndex = 0;
                 while ((match = WRAPPED_REF_REGEX.exec(visibleText)) !== null) {
@@ -61,7 +68,13 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
                     if (innerText && isBibleRef(innerText)) {
                         const start = from + match.index + (isWrapped ? 2 : 0);
                         const end = start + innerText.length;
-                        matches.push({ start, end, full: innerText });
+                        const rawEnd = from + match.index + match[0].length;
+                        matches.push({
+                            start,
+                            end,
+                            insertAt: this.getInlineInsertPosition(fullText, rawEnd),
+                            full: innerText
+                        });
                     }
                 }
 
@@ -83,7 +96,12 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
                     const bookName = previousRef ? bookNameFromReference(previousRef) : null;
                     
                     if (bookName) {
-                        matches.push({ start, end, full: `${bookName} ${standaloneRef}` });
+                        matches.push({
+                            start,
+                            end,
+                            insertAt: this.getInlineInsertPosition(fullText, end),
+                            full: `${bookName} ${standaloneRef}`
+                        });
                     }
                 }
 
@@ -106,8 +124,8 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
 
                     if (inlineText) {
                         builder.add(
-                            m.end,
-                            m.end,
+                            m.insertAt,
+                            m.insertAt,
                             Decoration.widget({
                                 widget: new InlineVerseWidget(inlineText),
                                 side: 1
@@ -118,6 +136,10 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
             }
 
             return builder.finish();
+        }
+
+        private getInlineInsertPosition(text: string, end: number): number {
+            return text[end] === ":" ? end + 1 : end;
         }
     }, {
         decorations: (v) => v.decorations,
