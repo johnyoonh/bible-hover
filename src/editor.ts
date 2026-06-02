@@ -2,15 +2,34 @@ import {
     Decoration,
     DecorationSet,
     EditorView,
+    WidgetType,
     ViewPlugin,
     ViewUpdate,
 } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX, WRAPPED_REF_REGEX } from "./references";
 import { isBibleRef } from "./bookAliases";
+import type BibleHoverPlugin from "./main";
 
-export const bibleObserver = ViewPlugin.fromClass(
-    class {
+class InlineVerseWidget extends WidgetType {
+    constructor(private text: string) {
+        super();
+    }
+
+    eq(other: InlineVerseWidget): boolean {
+        return other.text === this.text;
+    }
+
+    toDOM(): HTMLElement {
+        const container = document.createElement("span");
+        container.addClass("bible-inline-verse");
+        container.innerHTML = this.text;
+        return container;
+    }
+}
+
+export function createBibleObserver(plugin: BibleHoverPlugin) {
+    return ViewPlugin.fromClass(class {
         decorations: DecorationSet;
 
         constructor(view: EditorView) {
@@ -18,7 +37,7 @@ export const bibleObserver = ViewPlugin.fromClass(
         }
 
         update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged) {
+            if (update.docChanged || update.viewportChanged || update.selectionSet) {
                 this.decorations = this.buildDecorations(update.view);
             }
         }
@@ -71,6 +90,11 @@ export const bibleObserver = ViewPlugin.fromClass(
                 // Add decorations
                 matches.sort((a, b) => a.start - b.start);
                 for (const m of matches) {
+                    const parser = plugin.getCurrentParser(m.full);
+                    const inlineText = plugin.settings.verseDisplayMode === 'off'
+                        ? null
+                        : parser?.getVerses(m.full, plugin.settings.verseDisplayMode);
+
                     builder.add(
                         m.start,
                         m.end,
@@ -79,13 +103,23 @@ export const bibleObserver = ViewPlugin.fromClass(
                             attributes: { "data-href": m.full }
                         })
                     );
+
+                    if (inlineText) {
+                        builder.add(
+                            m.end,
+                            m.end,
+                            Decoration.widget({
+                                widget: new InlineVerseWidget(inlineText),
+                                side: 1
+                            })
+                        );
+                    }
                 }
             }
 
             return builder.finish();
         }
-    },
-    {
+    }, {
         decorations: (v) => v.decorations,
-    }
-);
+    });
+}

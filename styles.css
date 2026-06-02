@@ -77,6 +77,21 @@
     color: #ff0000 !important;
 }
 
+.bible-inline-verse {
+    display: block;
+    margin: 6px 0 10px;
+    padding-left: 12px;
+    border-left: 2px solid var(--bible-link-color);
+    color: var(--text-normal);
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+.bible-inline-verse sup {
+    color: var(--text-muted);
+    margin-right: 2px;
+}
+
 /* Bible Book List in Settings */
 .bible-book-list {
     display: grid;

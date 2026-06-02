@@ -1,7 +1,7 @@
 import { Plugin, MarkdownRenderer, TFile, Component, Notice } from 'obsidian';
 import { BibleParser } from './parser';
 import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, VerseDisplayMode } from "./settings";
-import { bibleObserver } from './editor';
+import { createBibleObserver } from './editor';
 import { isBibleRef, isKorean } from './bookAliases';
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX } from './references';
 
@@ -24,7 +24,7 @@ export default class BibleHoverPlugin extends Plugin {
 
         this.addSettingTab(new BibleHoverSettingTab(this.app, this));
 
-        this.registerEditorExtension(bibleObserver);
+        this.registerEditorExtension(createBibleObserver(this));
 
         // Command to re-index all bibles
         this.addCommand({
@@ -37,7 +37,7 @@ export default class BibleHoverPlugin extends Plugin {
 
         this.addCommand({
             id: 'show-full-reference',
-            name: 'Show full Bible reference in hovers',
+            name: 'Display full Bible reference inline',
             callback: async () => {
                 await this.setVerseDisplayMode('full');
             }
@@ -45,17 +45,25 @@ export default class BibleHoverPlugin extends Plugin {
 
         this.addCommand({
             id: 'show-single-verse',
-            name: 'Show single Bible verse in hovers',
+            name: 'Display single Bible verse inline',
             callback: async () => {
                 await this.setVerseDisplayMode('single');
             }
         });
 
         this.addCommand({
-            id: 'toggle-verse-display',
-            name: 'Toggle Bible hover verse display',
+            id: 'hide-inline-verses',
+            name: 'Hide inline Bible verses',
             callback: async () => {
-                const nextMode = this.settings.verseDisplayMode === 'full' ? 'single' : 'full';
+                await this.setVerseDisplayMode('off');
+            }
+        });
+
+        this.addCommand({
+            id: 'toggle-verse-display',
+            name: 'Toggle inline Bible verse display',
+            callback: async () => {
+                const nextMode = this.settings.verseDisplayMode === 'single' ? 'full' : 'single';
                 await this.setVerseDisplayMode(nextMode);
             }
         });
@@ -113,6 +121,10 @@ export default class BibleHoverPlugin extends Plugin {
                 if (href && isBibleRef(href)) {
                     linkEl.addClass('bible-link');
                     linkEl.setAttribute('data-href', href);
+                    const inlineVerseEl = this.createInlineVerseElement(href);
+                    if (inlineVerseEl) {
+                        linkEl.insertAdjacentElement('afterend', inlineVerseEl);
+                    }
                 }
             });
 
@@ -180,6 +192,10 @@ export default class BibleHoverPlugin extends Plugin {
                     span.setAttribute('data-href', match.full); // Store the full reference including inferred book
                     span.setText(match.text);
                     fragment.appendChild(span);
+                    const inlineVerseEl = this.createInlineVerseElement(match.full);
+                    if (inlineVerseEl) {
+                        fragment.appendChild(inlineVerseEl);
+                    }
                     lastIndex = match.index + match.text.length;
                 }
                 fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
@@ -206,10 +222,18 @@ export default class BibleHoverPlugin extends Plugin {
     private async setVerseDisplayMode(mode: VerseDisplayMode): Promise<void> {
         this.settings.verseDisplayMode = mode;
         await this.saveSettings();
+        this.refreshInlineVerseDisplay();
 
-        new Notice(mode === 'full'
-            ? 'Bible Hover: showing full references'
-            : 'Bible Hover: showing single verses');
+        const modeLabel = mode === 'off'
+            ? 'hiding inline verses'
+            : mode === 'full'
+                ? 'displaying full references inline'
+                : 'displaying single verses inline';
+        new Notice(`Bible Hover: ${modeLabel}`);
+    }
+
+    refreshInlineVerseDisplay(): void {
+        this.app.workspace.updateOptions();
     }
 
     async loadBibleData() {
@@ -302,7 +326,7 @@ export default class BibleHoverPlugin extends Plugin {
     async onLinkHover(event: MouseEvent, ref: string, linkEl?: HTMLElement) {
         const parser = this.getCurrentParser(ref);
         if (!parser) return;
-        const text = parser.getVerses(ref, this.settings.verseDisplayMode);
+        const text = parser.getVerses(ref);
 
         if (this.hoverPopover) this.hoverPopover.remove();
 
@@ -371,6 +395,19 @@ export default class BibleHoverPlugin extends Plugin {
 
         this.hoverPopover.style.top = top + 'px';
         this.hoverPopover.style.left = left + 'px';
+    }
+
+    private createInlineVerseElement(ref: string): HTMLElement | null {
+        if (this.settings.verseDisplayMode === 'off') return null;
+
+        const parser = this.getCurrentParser(ref);
+        const text = parser?.getVerses(ref, this.settings.verseDisplayMode);
+        if (!text) return null;
+
+        const inlineVerseEl = document.createElement('span');
+        inlineVerseEl.addClass('bible-inline-verse');
+        inlineVerseEl.innerHTML = text;
+        return inlineVerseEl;
     }
 
     onLinkLeave(event: MouseEvent) {
