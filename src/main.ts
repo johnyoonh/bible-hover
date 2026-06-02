@@ -14,6 +14,7 @@ export default class BibleHoverPlugin extends Plugin {
     LinkHoverComponent: Component | null
     verseLeaf: WorkspaceLeaf | null = null;
     verseLeafTarget: VerseOpenTarget | null = null;
+    verseBannerCleanup: (() => void) | null = null;
 
     async onload() {
 
@@ -225,6 +226,7 @@ export default class BibleHoverPlugin extends Plugin {
         if (this.hoverPopover) {
             this.hoverPopover.remove();
         }
+        this.clearVerseBanner();
     }
 
     async loadSettings() {
@@ -502,6 +504,7 @@ export default class BibleHoverPlugin extends Plugin {
                 await this.app.workspace.revealLeaf(leaf);
             }
             await this.setVerseLeafReadOnly(leaf, line);
+            this.installVersePaneBanner(leaf, file.basename, ref);
         }
     }
 
@@ -520,6 +523,7 @@ export default class BibleHoverPlugin extends Plugin {
     clearVerseLeaf(): void {
         this.verseLeaf = null;
         this.verseLeafTarget = null;
+        this.clearVerseBanner();
     }
 
     private async setVerseLeafReadOnly(leaf: WorkspaceLeaf, line: number): Promise<void> {
@@ -548,5 +552,98 @@ export default class BibleHoverPlugin extends Plugin {
                 }
             }, { line });
         }
+    }
+
+    private installVersePaneBanner(leaf: WorkspaceLeaf, versionName: string, ref: string): void {
+        this.clearVerseBanner();
+        if (!(leaf.view instanceof MarkdownView)) return;
+
+        const previewEl = leaf.view.previewMode.containerEl;
+        const bannerEl = document.createElement('div');
+        bannerEl.addClass('bible-verse-pane-banner');
+        bannerEl.setAttribute('aria-label', 'Current Bible passage');
+
+        const versionEl = bannerEl.createSpan({ cls: 'bible-verse-pane-version' });
+        const bookEl = bannerEl.createSpan({ cls: 'bible-verse-pane-book' });
+        const chapterEl = bannerEl.createSpan({ cls: 'bible-verse-pane-chapter' });
+
+        previewEl.prepend(bannerEl);
+
+        const initialContext = this.getReferenceBannerContext(ref);
+        const updateBanner = () => {
+            const context = this.getVisibleBibleContext(previewEl, initialContext);
+            versionEl.setText(versionName);
+            bookEl.setText(context.book || 'Unknown book');
+            chapterEl.setText(context.chapter || 'Unknown chapter');
+        };
+        const ensureBanner = () => {
+            if (!bannerEl.isConnected) {
+                previewEl.prepend(bannerEl);
+            }
+            updateBanner();
+        };
+        const observer = new MutationObserver(ensureBanner);
+
+        previewEl.addEventListener('scroll', updateBanner);
+        window.addEventListener('resize', updateBanner);
+        observer.observe(previewEl, { childList: true });
+        updateBanner();
+        window.requestAnimationFrame(updateBanner);
+        window.setTimeout(updateBanner, 100);
+
+        this.verseBannerCleanup = () => {
+            previewEl.removeEventListener('scroll', updateBanner);
+            window.removeEventListener('resize', updateBanner);
+            observer.disconnect();
+            bannerEl.remove();
+        };
+    }
+
+    private clearVerseBanner(): void {
+        if (this.verseBannerCleanup) {
+            this.verseBannerCleanup();
+            this.verseBannerCleanup = null;
+        }
+    }
+
+    private getReferenceBannerContext(ref: string): { book: string, chapter: string } {
+        const normalizedRef = normalizeReference(ref);
+        const book = bookNameFromReference(normalizedRef) ?? '';
+        const chapterMatch = normalizedRef.match(/[ \t]+(\d+):/u);
+        const chapter = chapterMatch?.[1] ? `Chapter ${chapterMatch[1]}` : '';
+
+        return { book, chapter };
+    }
+
+    private getVisibleBibleContext(previewEl: HTMLElement, fallback: { book: string, chapter: string }): { book: string, chapter: string } {
+        let book = fallback.book;
+        let chapter = fallback.chapter;
+        const previewTop = previewEl.getBoundingClientRect().top;
+        const bannerHeight = previewEl.querySelector<HTMLElement>('.bible-verse-pane-banner')?.offsetHeight ?? 0;
+        const activeTop = previewTop + bannerHeight + 8;
+
+        const headings = Array.from(previewEl.querySelectorAll<HTMLElement>('h1, h2'));
+        for (const heading of headings) {
+            if (heading.getBoundingClientRect().top > activeTop) break;
+
+            const text = heading.textContent?.trim() ?? '';
+            if (heading.tagName === 'H1' && text) {
+                book = text;
+            } else if (heading.tagName === 'H2' && text) {
+                chapter = this.formatChapterLabel(text);
+            }
+        }
+
+        return { book, chapter };
+    }
+
+    private formatChapterLabel(headingText: string): string {
+        const chapterMatch = headingText.match(/^Chapter[ \t]+(.+)$/i);
+        if (chapterMatch?.[1]) return `Chapter ${chapterMatch[1].trim()}`;
+
+        const numericMatch = headingText.match(/^(\d+)$/);
+        if (numericMatch?.[1]) return `Chapter ${numericMatch[1]}`;
+
+        return headingText;
     }
 }
