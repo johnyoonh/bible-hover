@@ -1,4 +1,4 @@
-import { Plugin, MarkdownRenderer, TFile, Component, Notice } from 'obsidian';
+import { Plugin, MarkdownRenderer, TFile, Component, Notice, MarkdownView, WorkspaceLeaf } from 'obsidian';
 import { BibleParser } from './parser';
 import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, VerseDisplayMode } from "./settings";
 import { createBibleObserver } from './editor';
@@ -12,6 +12,7 @@ export default class BibleHoverPlugin extends Plugin {
     hideTimeout: number | null = null;
     settings: BibleHoverSettings;
     LinkHoverComponent: Component | null
+    verseLeaf: WorkspaceLeaf | null = null;
 
     async onload() {
 
@@ -39,7 +40,7 @@ export default class BibleHoverPlugin extends Plugin {
             id: 'show-full-reference',
             name: 'Display full Bible reference inline',
             callback: async () => {
-                await this.setVerseDisplayMode('full');
+                await this.toggleVerseDisplayMode('full');
             }
         });
 
@@ -47,7 +48,7 @@ export default class BibleHoverPlugin extends Plugin {
             id: 'show-single-verse',
             name: 'Display single Bible verse inline',
             callback: async () => {
-                await this.setVerseDisplayMode('single');
+                await this.toggleVerseDisplayMode('single');
             }
         });
 
@@ -63,7 +64,7 @@ export default class BibleHoverPlugin extends Plugin {
             id: 'toggle-verse-display',
             name: 'Toggle inline Bible verse display',
             callback: async () => {
-                const nextMode = this.settings.verseDisplayMode === 'single' ? 'full' : 'single';
+                const nextMode = this.settings.verseDisplayMode === 'off' ? 'full' : 'off';
                 await this.setVerseDisplayMode(nextMode);
             }
         });
@@ -241,6 +242,11 @@ export default class BibleHoverPlugin extends Plugin {
                 ? 'displaying full references inline'
                 : 'displaying single verses inline';
         new Notice(`Bible Hover: ${modeLabel}`);
+    }
+
+    private async toggleVerseDisplayMode(mode: Exclude<VerseDisplayMode, 'off'>): Promise<void> {
+        const nextMode = this.settings.verseDisplayMode === mode ? 'off' : mode;
+        await this.setVerseDisplayMode(nextMode);
     }
 
     refreshInlineVerseDisplay(): void {
@@ -455,12 +461,57 @@ export default class BibleHoverPlugin extends Plugin {
         const currentBible = this.settings.bibles.find(b => b.name === this.currentVersion);
         if (!currentBible) return;
 
-        const path = currentBible.path;
+        const path = currentBible.path.endsWith('.md') ? currentBible.path : `${currentBible.path}.md`;
         const file = this.app.vault.getAbstractFileByPath(path);
 
         if (file instanceof TFile) {
-            const leaf = this.app.workspace.getLeaf(true);
-            await leaf.openFile(file, { eState: { line: line } });
+            const leaf = this.getVerseLeaf();
+            await leaf.openFile(file, {
+                state: {
+                    mode: 'preview',
+                    source: false
+                },
+                eState: { line: line },
+                active: true
+            });
+            await this.setVerseLeafReadOnly(leaf, line);
+        }
+    }
+
+    private getVerseLeaf(): WorkspaceLeaf {
+        if (this.verseLeaf?.view.containerEl.isConnected) {
+            return this.verseLeaf;
+        }
+
+        this.verseLeaf = this.app.workspace.getLeaf('split', 'vertical');
+        return this.verseLeaf;
+    }
+
+    private async setVerseLeafReadOnly(leaf: WorkspaceLeaf, line: number): Promise<void> {
+        await leaf.loadIfDeferred();
+
+        const viewState = leaf.getViewState();
+        await leaf.setViewState({
+            ...viewState,
+            active: true,
+            state: {
+                ...viewState.state,
+                mode: 'preview',
+                source: false
+            }
+        }, { line });
+
+        if (leaf.view instanceof MarkdownView && leaf.view.getMode() !== 'preview') {
+            const currentState = leaf.getViewState();
+            await leaf.setViewState({
+                ...currentState,
+                active: true,
+                state: {
+                    ...currentState.state,
+                    mode: 'preview',
+                    source: false
+                }
+            }, { line });
         }
     }
 }
