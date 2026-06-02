@@ -23,6 +23,8 @@ interface VerseSegment {
     end: number;
 }
 
+export type VerseDisplayMode = 'single' | 'full';
+
 export class BibleParser {
     books: Map<string, BibleBook> = new Map();
 
@@ -71,11 +73,14 @@ export class BibleParser {
         }
     }
 
-    public getVerses(refString: string): string | null {
+    public getVerses(refString: string, displayMode: VerseDisplayMode = 'full'): string | null {
         const parts = this.parseRef(refString);
         if (!parts) return null;
 
-        const { bookName, verseSegments } = parts;
+        const { bookName } = parts;
+        const verseSegments = displayMode === 'single'
+            ? this.getSingleVerseSegments(parts.verseSegments)
+            : parts.verseSegments;
 
         // Resolve Alias (Case Insensitive)
         // Strip trailing dot if present (e.g., "Gen." -> "gen")
@@ -124,6 +129,18 @@ export class BibleParser {
 
         // Join segments with a horizontal rule
         return outputSegments.join('\n\n---\n\n');
+    }
+
+    private getSingleVerseSegments(verseSegments: VerseSegment[]): VerseSegment[] {
+        const firstSegment = verseSegments[0];
+        if (!firstSegment) return [];
+
+        return [{
+            startChapter: firstSegment.startChapter,
+            start: firstSegment.start,
+            endChapter: firstSegment.startChapter,
+            end: firstSegment.start
+        }];
     }
 
     public getVerseLine(refString: string): number | null {

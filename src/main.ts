@@ -1,6 +1,6 @@
-import { Plugin, MarkdownRenderer, TFile, Component } from 'obsidian';
+import { Plugin, MarkdownRenderer, TFile, Component, Notice } from 'obsidian';
 import { BibleParser } from './parser';
-import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, VerseDisplayMode } from "./settings";
 import { bibleObserver } from './editor';
 import { isBibleRef, isKorean } from './bookAliases';
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX } from './references';
@@ -32,6 +32,31 @@ export default class BibleHoverPlugin extends Plugin {
             name: 'Re-index all bibles',
             callback: async () => {
                 await this.loadBibleData();
+            }
+        });
+
+        this.addCommand({
+            id: 'show-full-reference',
+            name: 'Show full Bible reference in hovers',
+            callback: async () => {
+                await this.setVerseDisplayMode('full');
+            }
+        });
+
+        this.addCommand({
+            id: 'show-single-verse',
+            name: 'Show single Bible verse in hovers',
+            callback: async () => {
+                await this.setVerseDisplayMode('single');
+            }
+        });
+
+        this.addCommand({
+            id: 'toggle-verse-display',
+            name: 'Toggle Bible hover verse display',
+            callback: async () => {
+                const nextMode = this.settings.verseDisplayMode === 'full' ? 'single' : 'full';
+                await this.setVerseDisplayMode(nextMode);
             }
         });
 
@@ -178,6 +203,15 @@ export default class BibleHoverPlugin extends Plugin {
         await this.saveData(this.settings);
     }
 
+    private async setVerseDisplayMode(mode: VerseDisplayMode): Promise<void> {
+        this.settings.verseDisplayMode = mode;
+        await this.saveSettings();
+
+        new Notice(mode === 'full'
+            ? 'Bible Hover: showing full references'
+            : 'Bible Hover: showing single verses');
+    }
+
     async loadBibleData() {
         try {
             const adapter = this.app.vault.adapter;
@@ -268,7 +302,7 @@ export default class BibleHoverPlugin extends Plugin {
     async onLinkHover(event: MouseEvent, ref: string, linkEl?: HTMLElement) {
         const parser = this.getCurrentParser(ref);
         if (!parser) return;
-        const text = parser.getVerses(ref);
+        const text = parser.getVerses(ref, this.settings.verseDisplayMode);
 
         if (this.hoverPopover) this.hoverPopover.remove();
 

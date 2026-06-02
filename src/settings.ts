@@ -11,12 +11,16 @@ export interface BibleHoverSettings {
 	bibles: BibleVersion[];
 	defaultBible: string; // Name of the default version
 	linkColor: string;
+	verseDisplayMode: VerseDisplayMode;
 }
+
+export type VerseDisplayMode = 'single' | 'full';
 
 export const DEFAULT_SETTINGS: BibleHoverSettings = {
 	bibles: [],
 	defaultBible: '',
-	linkColor: '#ff4d4d'
+	linkColor: '#ff4d4d',
+	verseDisplayMode: 'full'
 }
 
 export class BibleHoverSettingTab extends PluginSettingTab {
@@ -95,6 +99,18 @@ export class BibleHoverSettingTab extends PluginSettingTab {
 					this.plugin.settings.linkColor = value;
 					await this.plugin.saveSettings();
 					this.plugin.applySettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Verse display')
+			.setDesc('Choose whether hovers show only the first verse or the full referenced range.')
+			.addDropdown(dropdown => dropdown
+				.addOption('full', 'Full reference')
+				.addOption('single', 'Single verse')
+				.setValue(this.plugin.settings.verseDisplayMode)
+				.onChange(async (value) => {
+					this.plugin.settings.verseDisplayMode = value as VerseDisplayMode;
+					await this.plugin.saveSettings();
 				}));
 
 		// List of configured versions
