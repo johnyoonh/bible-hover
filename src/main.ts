@@ -39,6 +39,7 @@ export default class BibleHoverPlugin extends Plugin {
         this.addCommand({
             id: 'show-full-reference',
             name: 'Display full Bible reference inline',
+            hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'V' }],
             callback: async () => {
                 await this.toggleVerseDisplayMode('full');
             }
@@ -47,6 +48,7 @@ export default class BibleHoverPlugin extends Plugin {
         this.addCommand({
             id: 'show-single-verse',
             name: 'Display single Bible verse inline',
+            hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'S' }],
             callback: async () => {
                 await this.toggleVerseDisplayMode('single');
             }
@@ -55,6 +57,7 @@ export default class BibleHoverPlugin extends Plugin {
         this.addCommand({
             id: 'hide-inline-verses',
             name: 'Hide inline Bible verses',
+            hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'H' }],
             callback: async () => {
                 await this.setVerseDisplayMode('off');
             }
@@ -63,6 +66,7 @@ export default class BibleHoverPlugin extends Plugin {
         this.addCommand({
             id: 'toggle-verse-display',
             name: 'Toggle inline Bible verse display',
+            hotkeys: [{ modifiers: ['Alt', 'Shift'], key: 'B' }],
             callback: async () => {
                 const nextMode = this.settings.verseDisplayMode === 'off' ? 'full' : 'off';
                 await this.setVerseDisplayMode(nextMode);
