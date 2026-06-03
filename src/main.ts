@@ -1,6 +1,6 @@
 import { Plugin, MarkdownRenderer, TFile, Component, Notice, MarkdownView, WorkspaceLeaf } from 'obsidian';
 import { BibleParser } from './parser';
-import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, VerseDisplayMode, VerseOpenTarget } from "./settings";
+import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, ReferenceInteractionMode, VerseDisplayMode, VerseOpenTarget } from "./settings";
 import { createBibleObserver } from './editor';
 import { isBibleRef, isKorean } from './bookAliases';
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX } from './references';
@@ -81,7 +81,7 @@ export default class BibleHoverPlugin extends Plugin {
             if (linkEl) {
                 const ref = this.getRefFromLink(linkEl);
                 if (ref) {
-                    void this.onLinkHover(evt, ref, linkEl);
+                    void this.handleReferenceHover(evt, ref, linkEl);
                     return;
                 }
             }
@@ -94,8 +94,7 @@ export default class BibleHoverPlugin extends Plugin {
             if (linkEl) {
                 const ref = this.getRefFromLink(linkEl);
                 if (ref) {
-                    const touch = evt.touches[0];
-                    void this.onLinkHover(touch as unknown as MouseEvent, ref, linkEl);
+                    void this.handleReferenceTouch(evt, ref, linkEl);
                     return;
                 }
             }
@@ -110,7 +109,7 @@ export default class BibleHoverPlugin extends Plugin {
                 if (ref) {
                     evt.preventDefault();
                     evt.stopPropagation();
-                    if (evt.metaKey) {
+                    if (this.shouldJumpSidebarOnClick(evt)) {
                         await this.navigateToVerse(evt, ref);
                     }
                     return;
@@ -267,6 +266,28 @@ export default class BibleHoverPlugin extends Plugin {
         return this.settings.verseDisplayMode !== 'off';
     }
 
+    private getReferenceInteractionMode(): ReferenceInteractionMode {
+        return this.settings.referenceInteractionMode ?? DEFAULT_SETTINGS.referenceInteractionMode;
+    }
+
+    private isSidebarJumpInteractionEnabled(): boolean {
+        const mode = this.getReferenceInteractionMode();
+        return mode === 'sidebar-jump-hover' || mode === 'sidebar-jump-click';
+    }
+
+    private shouldJumpSidebarOnHover(): boolean {
+        return this.getReferenceInteractionMode() === 'sidebar-jump-hover';
+    }
+
+    private shouldJumpSidebarOnClick(evt: MouseEvent): boolean {
+        return evt.metaKey || this.getReferenceInteractionMode() === 'sidebar-jump-click';
+    }
+
+    private shouldSuppressHoverPopover(): boolean {
+        return this.isInlineVerseDisplayEnabled()
+            || (this.isSidebarJumpInteractionEnabled() && this.settings.hideHoverPopoverWhenJumping);
+    }
+
     async loadBibleData() {
         try {
             const adapter = this.app.vault.adapter;
@@ -354,8 +375,36 @@ export default class BibleHoverPlugin extends Plugin {
         }
     }
 
+    private async handleReferenceHover(event: MouseEvent, ref: string, linkEl?: HTMLElement): Promise<void> {
+        if (this.shouldJumpSidebarOnHover()) {
+            await this.navigateToVerse(event, ref, false);
+        }
+
+        await this.showHoverPopoverIfEnabled(event, ref, linkEl);
+    }
+
+    private async handleReferenceTouch(event: TouchEvent, ref: string, linkEl?: HTMLElement): Promise<void> {
+        if (this.shouldJumpSidebarOnHover()) {
+            await this.navigateToVerse(event, ref, false);
+        }
+
+        const touch = event.touches[0];
+        if (!touch) return;
+
+        await this.showHoverPopoverIfEnabled(touch as unknown as MouseEvent, ref, linkEl);
+    }
+
+    private async showHoverPopoverIfEnabled(event: MouseEvent, ref: string, linkEl?: HTMLElement): Promise<void> {
+        if (this.shouldSuppressHoverPopover()) {
+            this.removeHoverPopover();
+            return;
+        }
+
+        await this.onLinkHover(event, ref, linkEl);
+    }
+
     async onLinkHover(event: MouseEvent, ref: string, linkEl?: HTMLElement) {
-        if (this.isInlineVerseDisplayEnabled()) {
+        if (this.shouldSuppressHoverPopover()) {
             this.removeHoverPopover();
             return;
         }
@@ -440,6 +489,10 @@ export default class BibleHoverPlugin extends Plugin {
         }
     }
 
+    dismissHoverPopover(): void {
+        this.removeHoverPopover();
+    }
+
     private createInlineVerseElement(ref: string): HTMLElement | null {
         if (this.settings.verseDisplayMode === 'off') return null;
 
@@ -473,7 +526,7 @@ export default class BibleHoverPlugin extends Plugin {
         }, 300) as unknown as number;
     }
 
-    private async navigateToVerse(evt: MouseEvent, ref: string): Promise<void> {
+    private async navigateToVerse(evt: Event, ref: string, activate = true): Promise<void> {
         const parser = this.getCurrentParser(ref);
         if (!parser) return;
 
@@ -498,12 +551,12 @@ export default class BibleHoverPlugin extends Plugin {
                     source: false
                 },
                 eState: { line: line },
-                active: true
+                active: activate
             });
             if (this.settings.verseOpenTarget === 'right-sidebar') {
                 await this.app.workspace.revealLeaf(leaf);
             }
-            await this.setVerseLeafReadOnly(leaf, line);
+            await this.setVerseLeafReadOnly(leaf, line, activate);
             this.installVersePaneBanner(leaf, file.basename, ref);
         }
     }
@@ -526,13 +579,13 @@ export default class BibleHoverPlugin extends Plugin {
         this.clearVerseBanner();
     }
 
-    private async setVerseLeafReadOnly(leaf: WorkspaceLeaf, line: number): Promise<void> {
+    private async setVerseLeafReadOnly(leaf: WorkspaceLeaf, line: number, activate = true): Promise<void> {
         await leaf.loadIfDeferred();
 
         const viewState = leaf.getViewState();
         await leaf.setViewState({
             ...viewState,
-            active: true,
+            active: activate,
             state: {
                 ...viewState.state,
                 mode: 'preview',
@@ -544,7 +597,7 @@ export default class BibleHoverPlugin extends Plugin {
             const currentState = leaf.getViewState();
             await leaf.setViewState({
                 ...currentState,
-                active: true,
+                active: activate,
                 state: {
                     ...currentState.state,
                     mode: 'preview',

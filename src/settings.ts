@@ -13,17 +13,22 @@ export interface BibleHoverSettings {
 	linkColor: string;
 	verseDisplayMode: VerseDisplayMode;
 	verseOpenTarget: VerseOpenTarget;
+	referenceInteractionMode: ReferenceInteractionMode;
+	hideHoverPopoverWhenJumping: boolean;
 }
 
 export type VerseDisplayMode = 'off' | 'single' | 'full';
 export type VerseOpenTarget = 'right-sidebar' | 'right-split';
+export type ReferenceInteractionMode = 'hover-preview' | 'sidebar-jump-hover' | 'sidebar-jump-click';
 
 export const DEFAULT_SETTINGS: BibleHoverSettings = {
 	bibles: [],
 	defaultBible: '',
 	linkColor: '#ff4d4d',
 	verseDisplayMode: 'off',
-	verseOpenTarget: 'right-sidebar'
+	verseOpenTarget: 'right-sidebar',
+	referenceInteractionMode: 'hover-preview',
+	hideHoverPopoverWhenJumping: true
 }
 
 export class BibleHoverSettingTab extends PluginSettingTab {
@@ -129,6 +134,33 @@ export class BibleHoverSettingTab extends PluginSettingTab {
 					this.plugin.settings.verseOpenTarget = value as VerseOpenTarget;
 					await this.plugin.saveSettings();
 					this.plugin.clearVerseLeaf();
+				}));
+
+		new Setting(containerEl)
+			.setName('Reference interaction')
+			.setDesc('Choose whether references preview in a hover popover or jump the configured verse pane.')
+			.addDropdown(dropdown => dropdown
+				.addOption('hover-preview', 'Hover preview')
+				.addOption('sidebar-jump-hover', 'Jump sidebar on hover')
+				.addOption('sidebar-jump-click', 'Jump sidebar on click')
+				.setValue(this.plugin.settings.referenceInteractionMode)
+				.onChange(async (value) => {
+					this.plugin.settings.referenceInteractionMode = value as ReferenceInteractionMode;
+					await this.plugin.saveSettings();
+					this.plugin.dismissHoverPopover();
+				}));
+
+		new Setting(containerEl)
+			.setName('Hide hover popover while jumping sidebar')
+			.setDesc('Turn off hover popovers when reference interaction is set to jump the verse pane.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.hideHoverPopoverWhenJumping)
+				.onChange(async (value) => {
+					this.plugin.settings.hideHoverPopoverWhenJumping = value;
+					await this.plugin.saveSettings();
+					if (value) {
+						this.plugin.dismissHoverPopover();
+					}
 				}));
 
 		// List of configured versions
