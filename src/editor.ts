@@ -10,6 +10,8 @@ import { RangeSetBuilder } from "@codemirror/state";
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX, WRAPPED_REF_REGEX } from "./references";
 import { isBibleRef } from "./bookAliases";
 import type BibleHoverPlugin from "./main";
+import type { RenderedVerseSegment } from "./parser";
+import { renderVerseSegments } from "./verseRenderer";
 
 interface BibleReferenceMatch {
     start: number;
@@ -19,18 +21,18 @@ interface BibleReferenceMatch {
 }
 
 class InlineVerseWidget extends WidgetType {
-    constructor(private text: string) {
+    constructor(private segments: RenderedVerseSegment[]) {
         super();
     }
 
     eq(other: InlineVerseWidget): boolean {
-        return other.text === this.text;
+        return JSON.stringify(other.segments) === JSON.stringify(this.segments);
     }
 
     toDOM(): HTMLElement {
         const container = document.createElement("span");
         container.addClass("bible-inline-verse");
-        container.innerHTML = this.text;
+        renderVerseSegments(container, this.segments);
         return container;
     }
 }
@@ -109,9 +111,9 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
                 matches.sort((a, b) => a.start - b.start);
                 for (const m of matches) {
                     const parser = plugin.getCurrentParser(m.full);
-                    const inlineText = plugin.settings.verseDisplayMode === 'off'
+                    const inlineSegments = plugin.settings.verseDisplayMode === 'off'
                         ? null
-                        : parser?.getVerses(m.full, plugin.settings.verseDisplayMode);
+                        : parser?.getVerseSegments(m.full, plugin.settings.verseDisplayMode);
 
                     builder.add(
                         m.start,
@@ -122,12 +124,12 @@ export function createBibleObserver(plugin: BibleHoverPlugin) {
                         })
                     );
 
-                    if (inlineText) {
+                    if (inlineSegments) {
                         builder.add(
                             m.insertAt,
                             m.insertAt,
                             Decoration.widget({
-                                widget: new InlineVerseWidget(inlineText),
+                                widget: new InlineVerseWidget(inlineSegments),
                                 side: 1
                             })
                         );

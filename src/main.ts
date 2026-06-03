@@ -1,9 +1,10 @@
-import { Plugin, MarkdownRenderer, TFile, Component, Notice, MarkdownView, WorkspaceLeaf } from 'obsidian';
+import { Plugin, TFile, Notice, MarkdownView, WorkspaceLeaf } from 'obsidian';
 import { BibleParser } from './parser';
 import { DEFAULT_SETTINGS, BibleHoverSettings, BibleHoverSettingTab, ReferenceInteractionMode, VerseDisplayMode, VerseOpenTarget } from "./settings";
 import { createBibleObserver } from './editor';
 import { isBibleRef, isKorean } from './bookAliases';
 import { bookNameFromReference, firstValidReference, FULL_REF_REGEX, normalizeReference, STANDALONE_REF_REGEX } from './references';
+import { renderVerseSegments } from './verseRenderer';
 
 export default class BibleHoverPlugin extends Plugin {
     bibleParsers: Map<string, BibleParser> = new Map();
@@ -11,7 +12,6 @@ export default class BibleHoverPlugin extends Plugin {
     hoverPopover: HTMLElement | null = null;
     hideTimeout: number | null = null;
     settings: BibleHoverSettings;
-    LinkHoverComponent: Component | null
     verseLeaf: WorkspaceLeaf | null = null;
     verseLeafTarget: VerseOpenTarget | null = null;
     verseBannerCleanup: (() => void) | null = null;
@@ -411,27 +411,19 @@ export default class BibleHoverPlugin extends Plugin {
 
         const parser = this.getCurrentParser(ref);
         if (!parser) return;
-        const text = parser.getVerses(ref);
+        const segments = parser.getVerseSegments(ref);
 
         this.removeHoverPopover();
 
         this.hoverPopover = document.createElement('div');
         this.hoverPopover.addClass('bible-hover-popover');
 
-        const renderContent = async (textToRender: string | null, contentDiv: HTMLElement) => {
-            contentDiv.empty();
-            const content = textToRender || 'Not found';
-
-            let componentEl = this.LinkHoverComponent ?? new Component();
-            if (!componentEl) {
-                return;
-            }
-
-            await MarkdownRenderer.render(this.app, content, contentDiv, '', componentEl);
-        };
-
         const contentDiv = this.hoverPopover.createDiv({ cls: 'bible-popover-content' });
-        await renderContent(text, contentDiv);
+        if (segments) {
+            renderVerseSegments(contentDiv, segments);
+        } else {
+            contentDiv.setText('Not found');
+        }
 
         // Keep popover visible when mouse is over it
         this.hoverPopover.addEventListener('mouseenter', () => {
@@ -497,12 +489,12 @@ export default class BibleHoverPlugin extends Plugin {
         if (this.settings.verseDisplayMode === 'off') return null;
 
         const parser = this.getCurrentParser(ref);
-        const text = parser?.getVerses(ref, this.settings.verseDisplayMode);
-        if (!text) return null;
+        const segments = parser?.getVerseSegments(ref, this.settings.verseDisplayMode);
+        if (!segments) return null;
 
         const inlineVerseEl = document.createElement('span');
         inlineVerseEl.addClass('bible-inline-verse');
-        inlineVerseEl.innerHTML = text;
+        renderVerseSegments(inlineVerseEl, segments);
         return inlineVerseEl;
     }
 

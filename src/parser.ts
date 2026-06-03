@@ -16,11 +16,20 @@ export interface BibleBook {
     chapters: Map<number, BibleChapter>;
 }
 
-interface VerseSegment {
+interface VerseRange {
     startChapter: number;
     start: number;
     endChapter: number;
     end: number;
+}
+
+export interface RenderedVerse {
+    label: string;
+    text: string;
+}
+
+export interface RenderedVerseSegment {
+    verses: RenderedVerse[];
 }
 
 export type VerseDisplayMode = 'single' | 'full';
@@ -74,6 +83,17 @@ export class BibleParser {
     }
 
     public getVerses(refString: string, displayMode: VerseDisplayMode = 'full'): string | null {
+        const outputSegments = this.getVerseSegments(refString, displayMode);
+        if (!outputSegments) return null;
+
+        return outputSegments
+            .map(segment => segment.verses
+                .map(verse => `<sup>${this.escapeHtml(verse.label)}</sup> ${this.escapeHtml(verse.text)}`)
+                .join(' '))
+            .join('\n\n---\n\n');
+    }
+
+    public getVerseSegments(refString: string, displayMode: VerseDisplayMode = 'full'): RenderedVerseSegment[] | null {
         const parts = this.parseRef(refString);
         if (!parts) return null;
 
@@ -96,10 +116,10 @@ export class BibleParser {
         const book = this.books.get(searchKey);
         if (!book) return null;
 
-        let outputSegments: string[] = [];
+        let outputSegments: RenderedVerseSegment[] = [];
 
         for (const segment of verseSegments) {
-            let segmentText = "";
+            const verses: RenderedVerse[] = [];
             const isCrossChapter = segment.startChapter !== segment.endChapter;
 
             for (let chapterNum = segment.startChapter; chapterNum <= segment.endChapter; chapterNum++) {
@@ -115,23 +135,22 @@ export class BibleParser {
                     const verseData = chapter.verses.get(i);
                     if (verseData) {
                         const label = isCrossChapter ? `${chapterNum}:${i}` : `${i}`;
-                        segmentText += `<sup>${label}</sup> ${verseData.text} `;
+                        verses.push({ label, text: verseData.text });
                     }
                 }
             }
 
-            if (segmentText) {
-                outputSegments.push(segmentText.trim());
+            if (verses.length > 0) {
+                outputSegments.push({ verses });
             }
         }
 
         if (outputSegments.length === 0) return null;
 
-        // Join segments with a horizontal rule
-        return outputSegments.join('\n\n---\n\n');
+        return outputSegments;
     }
 
-    private getSingleVerseSegments(verseSegments: VerseSegment[]): VerseSegment[] {
+    private getSingleVerseSegments(verseSegments: VerseRange[]): VerseRange[] {
         const firstSegment = verseSegments[0];
         if (!firstSegment) return [];
 
@@ -202,12 +221,25 @@ export class BibleParser {
             const end = explicitEndVerse ?? start;
 
             return { startChapter, start, endChapter, end };
-        }).filter((s): s is VerseSegment => s !== null);
+        }).filter((s): s is VerseRange => s !== null);
 
         return {
             bookName,
             chapterNum,
             verseSegments: segments
         };
+    }
+
+    private escapeHtml(value: string): string {
+        return value.replace(/[&<>"']/g, char => {
+            switch (char) {
+                case '&': return '&amp;';
+                case '<': return '&lt;';
+                case '>': return '&gt;';
+                case '"': return '&quot;';
+                case "'": return '&#39;';
+                default: return char;
+            }
+        });
     }
 }
