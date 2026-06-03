@@ -536,7 +536,7 @@ export default class BibleHoverPlugin extends Plugin {
         const file = this.app.vault.getAbstractFileByPath(path);
 
         if (file instanceof TFile) {
-            const leaf = this.getVerseLeaf();
+            const leaf = this.getVerseLeaf(file);
             await leaf.openFile(file, {
                 state: {
                     mode: 'preview',
@@ -553,16 +553,71 @@ export default class BibleHoverPlugin extends Plugin {
         }
     }
 
-    private getVerseLeaf(): WorkspaceLeaf {
-        if (this.verseLeaf?.view.containerEl.isConnected && this.verseLeafTarget === this.settings.verseOpenTarget) {
+    private getVerseLeaf(file: TFile): WorkspaceLeaf {
+        if (this.isReusableVerseLeaf(this.verseLeaf, file)) {
             return this.verseLeaf;
         }
 
-        this.verseLeaf = this.settings.verseOpenTarget === 'right-sidebar'
-            ? this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf('split', 'vertical')
-            : this.app.workspace.getLeaf('split', 'vertical');
+        const existingLeaf = this.findExistingVerseLeaf(file);
+        if (existingLeaf) {
+            this.verseLeaf = existingLeaf;
+        } else {
+            this.verseLeaf = this.settings.verseOpenTarget === 'right-sidebar'
+                ? this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf('split', 'vertical')
+                : this.app.workspace.getLeaf('split', 'vertical');
+        }
+
         this.verseLeafTarget = this.settings.verseOpenTarget;
         return this.verseLeaf;
+    }
+
+    private isReusableVerseLeaf(leaf: WorkspaceLeaf | null, file: TFile): leaf is WorkspaceLeaf {
+        if (!leaf?.view.containerEl.isConnected || this.verseLeafTarget !== this.settings.verseOpenTarget) {
+            return false;
+        }
+
+        if (this.settings.verseOpenTarget === 'right-sidebar' && !this.isRightSidebarLeaf(leaf)) {
+            return false;
+        }
+
+        const leafFilePath = this.getLeafFilePath(leaf);
+        if (leafFilePath && leafFilePath !== file.path) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private findExistingVerseLeaf(file: TFile): WorkspaceLeaf | null {
+        let foundLeaf: WorkspaceLeaf | null = null;
+
+        this.app.workspace.iterateAllLeaves((leaf) => {
+            if (foundLeaf || this.getLeafFilePath(leaf) !== file.path) {
+                return;
+            }
+
+            if (this.settings.verseOpenTarget === 'right-sidebar' && !this.isRightSidebarLeaf(leaf)) {
+                return;
+            }
+
+            foundLeaf = leaf;
+        });
+
+        return foundLeaf;
+    }
+
+    private isRightSidebarLeaf(leaf: WorkspaceLeaf): boolean {
+        return leaf.getRoot() === this.app.workspace.rightSplit;
+    }
+
+    private getLeafFilePath(leaf: WorkspaceLeaf): string | null {
+        if (leaf.view instanceof MarkdownView) {
+            return leaf.view.file?.path ?? null;
+        }
+
+        const viewState = leaf.getViewState();
+        const file = viewState.type === 'markdown' ? viewState.state?.file : null;
+        return typeof file === 'string' ? file : null;
     }
 
     clearVerseLeaf(): void {
